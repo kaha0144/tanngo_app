@@ -6,12 +6,13 @@ from flask_migrate import Migrate
 from werkzeug.security import generate_password_hash, check_password_hash
 import pandas as pd
 import random
+from dotenv import load_dotenv
 from flask_login import LoginManager, UserMixin, login_user, logout_user, login_required, current_user
 from datetime import datetime, timedelta
 from functools import wraps
 from sqlalchemy import func
 from flask import jsonify
-
+load_dotenv() 
 # --- 初期化 ------------------------------------------------------------------
 app = Flask(__name__)
 login_manager = LoginManager()
@@ -23,7 +24,7 @@ db_url = os.environ.get('DATABASE_URL')
 if db_url:
     # Render や Heroku の場合
     app.config["SECRET_KEY"] = os.environ.get('SECRET_KEY', os.urandom(24).hex())
-    SQLALCHEMY_DATABASE_URI = db_url.replace('postgres://', 'postgresql://')
+    app.config['SQLALCHEMY_DATABASE_URI'] = db_url  # ← ここ重要！！
 else:
     # ローカル開発環境
     app.config["SECRET_KEY"] = os.urandom(24).hex()
@@ -34,10 +35,9 @@ else:
         'port': '5432',
         'database': 'postgres'
     }
-    SQLALCHEMY_DATABASE_URI = 'postgresql://{user}:{password}@{host}:{port}/{database}'.format(**db_info)
-
+    app.config['SQLALCHEMY_DATABASE_URI'] = 'postgresql://{user}:{password}@{host}:{port}/{database}'.format(**db_info)
 # --- DB設定 ---
-app.config['SQLALCHEMY_DATABASE_URI'] = SQLALCHEMY_DATABASE_URI
+app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('SQLALCHEMY_DATABASE_URI')
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 db = SQLAlchemy(app)
@@ -76,33 +76,12 @@ except FileNotFoundError:
     print("❌ エラー: words.xlsx が見つかりません。")
     full_df = pd.DataFrame(columns=["English", "Japanese"])
     ALL_INDICES = []
-
 try:
-    with open("import pandas as pd
-import numpy as np
-import pickle
-from sentence_transformers import SentenceTransformer
-
-# Excelファイルの読み込み
-df = pd.read_excel("words.xlsx")
-
-# 必要な列だけ取り出し（例：英単語だけをベクトル化）
-english_words = df["English"].astype(str).tolist()
-
-# モデルのロード（これはローカルで実行するため問題なし）
-model = SentenceTransformer('sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2')
-
-# ベクトルを生成（重い処理）
-vectors = model.encode(english_words)
-
-# ベクトルと単語情報を保存
-with open("word_vectors.pkl", "wb") as f:
-    pickle.dump(vectors, f)
-
-with open("words_metadata.pkl", "wb") as f:
-    pickle.dump(df.to_dict(orient="records"), f)
-
-print("✅ .pkl ファイルを保存しました！")
+    with open("word_vectors.pkl", "rb") as f:
+        vectors = pickle.load(f)
+except FileNotFoundError:
+    vectors = None
+    print("❌ エラー: word_vectors.pkl が見つかりません。")
 
 def is_answer_similar(user_answer, correct_answer, threshold=0.6):
     if embeddings is None:
