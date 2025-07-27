@@ -6,13 +6,13 @@ from flask_migrate import Migrate
 from werkzeug.security import generate_password_hash, check_password_hash
 import pandas as pd
 import random
-from dotenv import load_dotenv
+#from dotenv import load_dotenv
 from flask_login import LoginManager, UserMixin, login_user, logout_user, login_required, current_user
 from datetime import datetime, timedelta
 from functools import wraps
 from sqlalchemy import func
 from flask import jsonify
-load_dotenv() 
+#load_dotenv() 
 # --- 初期化 ------------------------------------------------------------------
 app = Flask(__name__)
 login_manager = LoginManager()
