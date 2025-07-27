@@ -17,8 +17,15 @@ login_manager = LoginManager()
 login_manager.init_app(app)
 login_manager.login_view = 'login'
 
-if app.debug:
-    app.config["SECRET_KEY"] = os.urandom(24)
+# --- 環境ごとの設定 ---
+db_url = os.environ.get('DATABASE_URL')
+if db_url:
+    # Render や Heroku の場合
+    app.config["SECRET_KEY"] = os.environ.get('SECRET_KEY', os.urandom(24).hex())
+    SQLALCHEMY_DATABASE_URI = db_url.replace('postgres://', 'postgresql://')
+else:
+    # ローカル開発環境
+    app.config["SECRET_KEY"] = os.urandom(24).hex()
     db_info = {
         'user': 'myuser',
         'password': 'kaha0144',
@@ -27,9 +34,8 @@ if app.debug:
         'database': 'postgres'
     }
     SQLALCHEMY_DATABASE_URI = 'postgresql://{user}:{password}@{host}:{port}/{database}'.format(**db_info)
-else:
-    app.config["SECRET_KEY"] = os.environ.get('SECRET_KEY')
-    SQLALCHEMY_DATABASE_URI = os.environ.get('DATABASE_URL').replace('postgres://', 'postgresql://')
+
+# --- DB設定 ---
 app.config['SQLALCHEMY_DATABASE_URI'] = SQLALCHEMY_DATABASE_URI
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
