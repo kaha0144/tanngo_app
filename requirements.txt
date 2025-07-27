@@ -50,4 +50,5 @@ tzdata==2025.2
 urllib3==2.5.0
 Werkzeug==3.1.3
 psycopg2-binary==2.9.9
-openpyxl==3.1.2flask-migrate
+openpyxl==3.1.2
+flask-migrate
