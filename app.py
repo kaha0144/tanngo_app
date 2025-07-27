@@ -69,7 +69,7 @@ def load_user(user_id):
 
 # --- グローバル変数とヘルパー関数 --------------------------------------------------
 try:
-    full_df = pd.read_excel("words.xlsx")
+    full_df = pd.read_excel("static/words.xlsx")
     ALL_INDICES = list(full_df.index)
     print("✅ words.xlsx を正常に読み込みました。")
 except FileNotFoundError:
@@ -77,11 +77,11 @@ except FileNotFoundError:
     full_df = pd.DataFrame(columns=["English", "Japanese"])
     ALL_INDICES = []
 try:
-    with open("word_vectors.pkl", "rb") as f:
-        vectors = pickle.load(f)
+    with open("static/word_vectors.pkl", "rb") as f:
+        embeddings = pickle.load(f)
 except FileNotFoundError:
-    vectors = None
-    print("❌ エラー: word_vectors.pkl が見つかりません。")
+        embeddings = None
+        print("❌ エラー: word_vectors.pkl が見つかりません。")
 
 def is_answer_similar(user_answer, correct_answer, threshold=0.6):
     if embeddings is None:
