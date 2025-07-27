@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <title>最小限のテスト</title>
+    <style>
+        /* 見やすいように最低限のスタイル */
+        body { padding: 20px; font-family: sans-serif; }
+        input { font-size: 1.2em; width: 300px; }
+        ul { border: 1px solid #ccc; list-style: none; padding: 0; width: 300px; }
+        li { padding: 5px 10px; }
+        li:hover { background-color: #f0f0f0; }
+    </style>
+</head>
+<body>
+
+    <h1>予測変換テスト</h1>
+    <p>a や b などを入力してみてください</p>
+
+    <input type="text" id="searchInput" autocomplete="off">
+    <ul id="suggestions"></ul>
+
+    <script>
+        const searchInput = document.getElementById('searchInput');
+        const suggestionsUl = document.getElementById('suggestions');
+
+        searchInput.addEventListener('input', async () => {
+            const query = searchInput.value;
+            
+            if (query.length === 0) {
+                suggestionsUl.innerHTML = '';
+                return;
+            }
+
+            // app.pyの /api/suggest に問い合わせ
+            const response = await fetch(`/api/suggest?q=${query}`);
+            const suggestions = await response.json();
+
+            // 候補リストを更新
+            suggestionsUl.innerHTML = '';
+            suggestions.forEach(word => {
+                const li = document.createElement('li');
+                li.textContent = word;
+                suggestionsUl.appendChild(li);
+            });
+        });
+    </script>
+
+</body>
+</html>

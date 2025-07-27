@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <title>学習の進捗</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <!-- Chart.js CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+    <div class="container my-5">
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <h1 class="h2">学習の進捗</h1>
+            <a href="{{ url_for('menu') }}" class="btn btn-secondary">メニューに戻る</a>
+        </div>
+
+        <div class="card">
+            <div class="card-header">
+                直近7日間の解答数
+            </div>
+            <div class="card-body">
+                <canvas id="progressChart"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const ctx = document.getElementById('progressChart').getContext('2d');
+        const progressChart = new Chart(ctx, {
+            type: 'bar',
+            data: {
+                // ★★★ データを安全にJavaScriptに渡すように修正 ★★★
+                labels: {{ labels|tojson|safe }},
+                datasets: [{
+                    label: '解答数',
+                    data: {{ data|tojson|safe }},
+                    backgroundColor: 'rgba(54, 162, 235, 0.5)',
+                    borderColor: 'rgba(54, 162, 235, 1)',
+                    borderWidth: 1
+                }]
+            },
+            options: {
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        ticks: {
+                            stepSize: 1 // Y軸の目盛りを整数に
+                        }
+                    }
+                },
+                plugins: {
+                    legend: {
+                        display: false // 凡例は非表示
+                    }
+                }
+            }
+        });
+    </script>
+</body>
+</html>

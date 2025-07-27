@@ -1,0 +1,21 @@
+[project]
+name = "tanngo_app"
+version = "0.1.0"
+description = ""
+authors = [
+    {name = "kawamata haruka",email = "soroban1212@icliud.com"}
+]
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "psycopg[binary] (==3.1.18)",
+    "flask-sqlalchemy (==3.1.1)",
+    "flask-login (>=0.6.3,<0.7.0)",
+    "flask-migrate (>=4.1.0,<5.0.0)",
+    "gunicorn (>=23.0.0,<24.0.0)"
+]
+
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"

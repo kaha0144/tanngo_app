@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <title>単語検索</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        /* 予測変換の候補リストのスタイル */
+        .suggestions-list-container {
+            position: absolute;
+            top: 100%; /* 入力欄のすぐ下に配置 */
+            left: 0;
+            right: 0;
+            z-index: 1000;
+        }
+        .suggestion-item:hover {
+            background-color: #f0f0f0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container my-5">
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <h1 class="h2">単語検索</h1>
+            <a href="{{ url_for('menu') }}" class="btn btn-secondary">メニューに戻る</a>
+        </div>
+
+        <div class="card mb-4">
+            <div class="card-body">
+                <form id="searchForm" action="{{ url_for('search_word') }}" method="POST">
+                    <div class="position-relative">
+                        <div class="input-group">
+                            <input type="text" id="searchInput" name="query" class="form-control" placeholder="英語または日本語で検索..." value="{{ query }}" autofocus autocomplete="off">
+                            <button type="button" id="searchButton" class="btn btn-primary">検索</button>
+                        </div>
+                        <!-- 予測変換の候補を表示するコンテナ -->
+                        <div id="suggestionsContainer" class="list-group suggestions-list-container"></div>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        {% if query %}
+        <div class="card">
+            <div class="card-header">
+                検索結果: {{ search_results|length }} 件
+            </div>
+            <div class="card-body" style="max-height: 60vh; overflow-y: auto;">
+                {% if search_results %}
+                <ul class="list-group list-group-flush">
+                    {% for item in search_results %}
+                    <li class="list-group-item d-flex justify-content-between">
+                        <strong>{{ item.English }}</strong>
+                        <span>{{ item.Japanese }}</span>
+                    </li>
+                    {% endfor %}
+                </ul>
+                {% else %}
+                <p class="text-center text-muted">該当する単語が見つかりませんでした。</p>
+                {% endif %}
+            </div>
+        </div>
+        {% endif %}
+    </div>
+
+    <script>
+        const searchInput = document.getElementById('searchInput');
+        const suggestionsContainer = document.getElementById('suggestionsContainer');
+        const searchForm = document.getElementById('searchForm');
+        const searchButton = document.getElementById('searchButton');
+
+
+        
+        searchInput.addEventListener('input', async (e) => {
+            const query = e.target.value;
+            
+            if (query.length < 1) {
+                suggestionsContainer.innerHTML = '';
+                return;
+            }
+
+            try {
+                const response = await fetch(`/api/search_suggestions?q=${encodeURIComponent(query)}`);
+                const suggestions = await response.json();
+                
+                suggestionsContainer.innerHTML = ''; // 一旦クリア
+
+                suggestions.forEach(suggestion => {
+                    const item = document.createElement('a');
+                    item.href = "#";
+                    item.classList.add('list-group-item', 'list-group-item-action', 'suggestion-item');
+                    item.textContent = suggestion;
+                    
+                    item.addEventListener('click', (event) => {
+                        event.preventDefault();
+                        searchInput.value = suggestion;
+                        suggestionsContainer.innerHTML = '';
+                        searchForm.submit(); // フォームを送信
+                    });
+                    
+                    suggestionsContainer.appendChild(item);
+                });
+            } catch (error) {
+                console.error('Suggestion fetch error:', error);
+            }
+        });
+
+        // [追加] 検索ボタンをクリックしたらフォームを送信する
+        searchButton.addEventListener('click', () => {
+            searchForm.submit();
+        });
+
+        // 他の場所をクリックしたら候補を閉じる
+        document.addEventListener('click', (e) => {
+            // 検索フォームの外側がクリックされた場合のみ候補を閉じるようにするとより確実
+            if (!searchForm.contains(e.target)) {
+                suggestionsContainer.innerHTML = '';
+            }
+        });
+    </script>
+</body>
+</html>
+
