@@ -1,16 +1,17 @@
 import os
+import pickle
 from flask import Flask, request, render_template, redirect, url_for, flash, session
 from flask_sqlalchemy import SQLAlchemy
 from flask_migrate import Migrate
 from werkzeug.security import generate_password_hash, check_password_hash
 import pandas as pd
-from sentence_transformers import SentenceTransformer, util
 import random
 from flask_login import LoginManager, UserMixin, login_user, logout_user, login_required, current_user
 from datetime import datetime, timedelta
 from functools import wraps
 from sqlalchemy import func
 from flask import jsonify
+
 # --- 初期化 ------------------------------------------------------------------
 app = Flask(__name__)
 login_manager = LoginManager()
@@ -62,7 +63,6 @@ class QuizAttempt(db.Model):
     
     user = db.relationship('User', backref=db.backref('attempts', lazy=True))
 
-
 @login_manager.user_loader
 def load_user(user_id):
     return User.query.get(int(user_id))
@@ -71,29 +71,36 @@ def load_user(user_id):
 try:
     full_df = pd.read_excel("words.xlsx")
     ALL_INDICES = list(full_df.index)
-    print("words.xlsx を正常に読み込みました。")
+    print("✅ words.xlsx を正常に読み込みました。")
 except FileNotFoundError:
-    print("エラー: words.xlsx が見つかりません。")
+    print("❌ エラー: words.xlsx が見つかりません。")
     full_df = pd.DataFrame(columns=["English", "Japanese"])
     ALL_INDICES = []
 
 try:
-    model = SentenceTransformer('sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2')
-    print("SentenceTransformer モデルを正常にロードしました。")
+    with open("vectors.pkl", "rb") as f:
+        embeddings = pickle.load(f)
+    print("✅ vectors.pkl を読み込みました。")
 except Exception as e:
-    print(f"エラー: SentenceTransformer モデルのロードに失敗しました: {e}")
-    model = None
+    print(f"❌ vectors.pkl の読み込みに失敗しました: {e}")
+    embeddings = None
 
 def is_answer_similar(user_answer, correct_answer, threshold=0.6):
-    if model is None:
+    if embeddings is None:
         user_ans_clean = user_answer.strip().lower()
         correct_ans_clean = correct_answer.strip().lower()
         return user_ans_clean and user_ans_clean in correct_ans_clean
     else:
-        emb1 = model.encode(user_answer, convert_to_tensor=True)
-        emb2 = model.encode(correct_answer, convert_to_tensor=True)
-        sim = util.cos_sim(emb1, emb2).item()
-        return sim >= threshold
+        from sentence_transformers import util
+        emb1 = embeddings.get(user_answer)
+        emb2 = embeddings.get(correct_answer)
+        if emb1 is not None and emb2 is not None:
+            sim = util.cos_sim(emb1, emb2).item()
+            return sim >= threshold
+        return False
+
+# （以降のコードはそのまま）
+
 
 def remove_mistake_from_all_lists(index_to_delete):
     """指定された単語IDを、永続・中断セッションを含む全ての間違いリストから完全に削除する"""
