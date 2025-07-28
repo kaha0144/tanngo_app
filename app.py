@@ -6,13 +6,13 @@ from flask_migrate import Migrate
 from werkzeug.security import generate_password_hash, check_password_hash
 import pandas as pd
 import random
-#from dotenv import load_dotenv
+from dotenv import load_dotenv
 from flask_login import LoginManager, UserMixin, login_user, logout_user, login_required, current_user
 from datetime import datetime, timedelta
 from functools import wraps
 from sqlalchemy import func
 from flask import jsonify
-#load_dotenv() 
+load_dotenv() 
 # --- 初期化 ------------------------------------------------------------------
 app = Flask(__name__)
 login_manager = LoginManager()
@@ -89,7 +89,11 @@ def is_answer_similar(user_answer, correct_answer, threshold=0.6):
         correct_ans_clean = correct_answer.strip().lower()
         return user_ans_clean and user_ans_clean in correct_ans_clean
     else:
-        from sentence_transformers import util
+        try:
+            from sentence_transformers import util
+        except ImportError:
+            return False  # モデルがない場合は False 扱いにする
+
         emb1 = embeddings.get(user_answer)
         emb2 = embeddings.get(correct_answer)
         if emb1 is not None and emb2 is not None:
