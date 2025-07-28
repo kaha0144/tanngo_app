@@ -1,25 +1,26 @@
-import pandas as pd
-import numpy as np
-import pickle
+# 保存用スクリプト（make_word_vectors.py などに保存して実行）
+
 from sentence_transformers import SentenceTransformer
+import pandas as pd
+import pickle
 
-# Excelファイルの読み込み
-df = pd.read_excel("words.xlsx")
+# 1. 単語一覧の読み込み（words.xlsx）
+df = pd.read_excel("static/words.xlsx")
 
-# 必要な列だけ取り出し（例：英単語だけをベクトル化）
-english_words = df["English"].astype(str).tolist()
+# 2. 単語の抽出（英語だけ）
+english_words = df["English"].dropna().unique().tolist()
 
-# モデルのロード（これはローカルで実行するため問題なし）
-model = SentenceTransformer('sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2')
+# 3. モデル読み込み
+model = SentenceTransformer("paraphrase-MiniLM-L6-v2")
 
-# ベクトルを生成（重い処理）
+# 4. ベクトル生成
 vectors = model.encode(english_words)
 
-# ベクトルと単語情報を保存
+# 5. 辞書に変換
+word_vectors = {word: vec for word, vec in zip(english_words, vectors)}
+
+# 6. 保存
 with open("word_vectors.pkl", "wb") as f:
-    pickle.dump(vectors, f)
+    pickle.dump(word_vectors, f)
 
-with open("words_metadata.pkl", "wb") as f:
-    pickle.dump(df.to_dict(orient="records"), f)
-
-print("✅ .pkl ファイルを保存しました！")
+print("✅ 正常に保存されました（辞書形式）")

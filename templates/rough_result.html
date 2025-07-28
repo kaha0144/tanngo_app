@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <title>ざっくり学習 - 結果</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100 p-6 sm:p-8">
+    <div class="max-w-2xl mx-auto bg-white p-8 rounded-xl shadow-lg">
+        <h1 class="text-3xl font-bold text-gray-800 text-center mb-6">ざっくり学習 結果</h1>
+
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6 text-center">
+            <div class="bg-blue-100 p-4 rounded-lg">
+                <p class="text-sm font-medium text-blue-700">出題数</p>
+                <p class="text-2xl font-bold text-blue-800">{{ total }}</p>
+            </div>
+            <div class="bg-green-100 p-4 rounded-lg">
+                <p class="text-sm font-medium text-green-700">正解数</p>
+                <p class="text-2xl font-bold text-green-800">{{ score }}</p>
+            </div>
+            <div class="bg-red-100 p-4 rounded-lg">
+                <p class="text-sm font-medium text-red-700">間違い数</p>
+                <p class="text-2xl font-bold text-red-800">{{ mistake_words|length }}</p>
+            </div>
+        </div>
+
+        <h2 class="text-xl font-semibold text-gray-700 mb-4">間違えた単語リスト（{{ direction_label }}）</h2>
+
+        {% if mistake_words %}
+            <div class="space-y-2 max-h-60 overflow-y-auto border p-4 rounded-lg bg-gray-50">
+                {% for word in mistake_words %}
+                    <div class="flex justify-between">
+                        <span class="font-semibold text-gray-800">{{ word.english }}</span>
+                        <span class="text-gray-600">{{ word.japanese }}</span>
+                    </div>
+                {% endfor %}
+            </div>
+        {% else %}
+            <p class="text-center text-gray-500 py-4">全問正解です！素晴らしい！</p>
+        {% endif %}
+
+        <div class="mt-8 space-y-3">
+            <a href="{{ url_for('start_rough_review') }}" class="block w-full bg-yellow-500 hover:bg-yellow-600 text-white font-semibold py-3 px-4 rounded-lg text-center">ざっくり復習を始める</a>
+            <a href="{{ url_for('rough_menu') }}" class="block w-full bg-gray-300 hover:bg-gray-400 text-gray-800 font-semibold py-3 px-4 rounded-lg text-center">メニューに戻る</a>
+        </div>
+    </div>
+</body>
+</html>

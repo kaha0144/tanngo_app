@@ -807,9 +807,439 @@ def search_suggestions():
 
     # [修正2] 検索候補をJSON形式でフロントエンドに返す
     return jsonify(limited_suggestions)
+@app.route("/rough_menu")
+@login_required
+def rough_menu():
+    return render_template("rough_menu.html")
 
-# --- アプリケーション実行 ---------------------------------------------------------
 
-
+@app.route("/start_rough_quiz/<direction>")
+@login_required
+def start_rough_quiz(direction):
+    if direction not in ['je', 'ej']:
+        flash("無効な出題方向です。", "danger")
+        return redirect(url_for("menu"))
     
+    indices = random.sample(ALL_INDICES, min(10, len(ALL_INDICES)))
+    session['quiz_direction'] = direction
+    session['quiz_rows'] = indices
+    session['quiz_type'] = f"rough_{direction}"
+    session['index'] = 0
+    session['score'] = 0
+    session['rough_mistakes'] = session.get('rough_mistakes', { 'rough_je': [], 'rough_ej': [] })
+    return redirect(url_for("rough_quiz"))
+
+@app.route("/start_rough_review")
+@login_required
+def start_rough_review():
+    # 1. 永続リストと一時リストの両方から間違いを集める
+    all_mistakes = session.get('global_rough_mistakes', [])
     
+    temp_mistakes = session.get('rough_mistakes', {})
+    for direction in ['rough_je', 'rough_ej']:
+        all_mistakes.extend(temp_mistakes.get(direction, []))
+
+    # 2. 【重要】リストから重複を削除する
+    unique_mistakes = []
+    seen_indices = set()
+    for mistake in all_mistakes:
+        # (単語のID, 出題方向) の組み合わせで重複をチェック
+        identifier = (mistake['idx'], mistake['dir'])
+        if identifier not in seen_indices:
+            unique_mistakes.append(mistake)
+            seen_indices.add(identifier)
+
+    # 3. 重複削除後のリストでクイズを開始する
+    if not unique_mistakes:
+        flash("ざっくり復習する単語がありません。", "warning")
+        return redirect(url_for("rough_menu"))
+        
+    random.shuffle(unique_mistakes)
+    session['quiz_type'] = 'rough_review'
+    session['quiz_rows'] = unique_mistakes  # 重複がないリストを使用
+    session['index'] = 0
+    session['score'] = 0
+    return redirect(url_for("rough_quiz"))
+
+@app.route("/rough_quiz", methods=["GET", "POST"])
+@login_required
+def rough_quiz():
+    # セッションに rough_mistakes キーがなければ初期化
+    if 'rough_mistakes' not in session:
+        session['rough_mistakes'] = {'rough_je': [], 'rough_ej': []}
+
+    idx = session.get("index", 0)
+    quiz_rows = session.get("quiz_rows", [])
+
+    # 全問終了したら結果画面へ
+    if idx >= len(quiz_rows):
+        return redirect(url_for("rough_result"))
+
+    # 出題対象の単語ID と方向を決定
+    quiz_type = session.get("quiz_type")
+    if quiz_type == "rough_review":
+        item = quiz_rows[idx]
+        row_index = item['idx']
+        direction = item['dir']
+    else:
+        row_index = quiz_rows[idx]
+        direction = session.get("quiz_direction")
+
+    english = full_df.at[row_index, "English"]
+    japanese = full_df.at[row_index, "Japanese"]
+    question, answer = (japanese, english) if direction == 'je' else (english, japanese)
+
+    # 4択の選択肢を生成
+    options = [answer]
+    while len(options) < 4:
+        candidate = full_df.sample(1).iloc[0]
+        opt = candidate["English"] if direction == 'je' else candidate["Japanese"]
+        if opt != answer and opt not in options:
+            options.append(opt)
+    random.shuffle(options)
+
+    # フィードバック用変数初期化
+    show_fb = False
+    result = None
+    user_ans = None
+    correct_eng = english
+    correct_jpn = japanese
+
+    # ★追加: 範囲指定クイズかどうかを判定するフラグ
+    is_ranged_quiz = 'rough_range' in session
+
+    if request.method == "POST":
+        user_ans = request.form.get("option")
+        # 正誤判定
+        is_correct = user_ans == answer
+        # 1. スコアを更新
+        session["score"] = session.get("score", 0) + int(is_correct)
+
+        ## ★★★ ここからインデントを修正 ★★★
+        if not is_correct and quiz_type != "rough_review":
+            # このifブロックの中に、間違い記録処理をすべてまとめる
+            entry = {'idx': row_index, 'dir': direction}
+
+            # 2a. 現在のクイズ用の一時リストに記録
+            key = f"rough_{direction}"
+            mistakes = session['rough_mistakes'].get(key, [])
+            if entry not in mistakes:
+                mistakes.append(entry)
+                session['rough_mistakes'][key] = mistakes
+
+            # 2b. 復習用の永続リストに記録 (正しくインデント)
+            if 'global_rough_mistakes' not in session:
+                session['global_rough_mistakes'] = []
+            global_mistakes = session.get('global_rough_mistakes', [])
+            if entry not in global_mistakes:
+                global_mistakes.append(entry)
+                session['global_rough_mistakes'] = global_mistakes
+        
+        # 3. 回答直後にインデックスを更新して進捗を保存
+        session["index"] = idx + 1
+        
+        # フィードバック表示
+        show_fb = True
+        result = "正解" if is_correct else "不正解"
+
+        return render_template(
+            "rough_quiz.html",
+            question=question,
+            options=options,
+            idx=idx + 1,
+            total=len(quiz_rows),
+            quiz_rows=quiz_rows, 
+            show_feedback_and_next_button=show_fb,
+            result=result,
+            user_answer_for_feedback=user_ans,
+            correct_english_for_feedback=correct_eng,
+            correct_japanese_for_feedback=correct_jpn,
+            is_ranged_quiz=is_ranged_quiz
+        )
+
+    # （...GETリクエストのコードは変更なし...）
+    return render_template(
+        "rough_quiz.html",
+        question=question,
+        options=options,
+        idx=idx + 1,
+        total=len(quiz_rows),
+        show_feedback_and_next_button=False,
+        is_ranged_quiz=is_ranged_quiz
+    )
+@app.route("/rough_next_question")
+@login_required
+def rough_next_question():
+    session["index"] = session.get("index", 0) 
+    return redirect(url_for("rough_quiz"))
+
+
+@app.route("/rough_range/<direction>")
+@login_required
+def rough_range_selector(direction):
+    if direction not in ['je', 'ej']:
+        flash("無効な出題方向です。", "danger")
+        return redirect(url_for('rough_menu'))
+
+    # 単語範囲の生成（例：1〜50、51〜100...）
+    total_words = len(full_df)
+    ranges = [(i + 1, min(i + 50, total_words)) for i in range(0, total_words, 50)]
+
+    # 保存された進捗（存在する場合）
+    saved_rough_states = session.get('saved_rough_states', {}).get(direction, {})
+    return render_template(
+        "rough_range_selector.html",
+        direction=direction,
+        ranges=ranges,
+        saved_rough_states=saved_rough_states
+    )
+
+@app.route('/start_rough_quiz_with_range/<direction>/<int:start>/<int:end>')
+@login_required
+def start_rough_quiz_with_range(direction, start, end):
+    if direction not in ['je', 'ej']:
+        flash("無効な方向です", "danger")
+        return redirect(url_for('rough_menu'))
+
+    selected_df = full_df.iloc[start-1:end].copy()
+
+    if selected_df.empty:
+        flash("選択された範囲に単語が存在しません", "warning")
+        return redirect(url_for('rough_menu'))
+
+    selected_rows = selected_df.sample(min(50, len(selected_df)), replace=False).reset_index()
+
+    session['quiz_type'] = 'rough'
+    session['quiz_direction'] = direction
+    session['quiz_rows'] = list(selected_rows['index'])  # 重要: 元の full_df の index
+    session['index'] = 0  # ← 修正ポイント
+    session['score'] = 0
+    session['rough_mistakes'] = session.get('rough_mistakes', { 'rough_je': [], 'rough_ej': [] })
+
+    session['rough_range'] = (start, end)
+    return redirect(url_for('rough_quiz'))
+
+@app.route("/rough_current_result")
+@login_required
+def rough_current_result():
+    quiz_rows = session.get("quiz_rows", [])
+    current_index = session.get("index", 0)
+    score = session.get("score", 0)
+    direction = session.get("quiz_direction", "je")
+    quiz_type = session.get("quiz_type", "rough")
+
+    # mistake_wordsは rough_mistakes から取り出す（復習は別扱い）
+    mistakes = []
+    if quiz_type == "rough_review":
+        mistakes = session.get("quiz_rows", [])
+    elif quiz_type in ['rough_je', 'rough_ej', 'rough']:
+        key = f"rough_{direction}"
+        mistakes = session.get("rough_mistakes", {}).get(key, [])
+
+    return render_template(
+        "rough_current_result.html",
+        current_question_number=current_index + 1,
+        total_questions=len(quiz_rows),
+        score=score,
+        mistake_words=[
+            {"english": full_df.at[m["idx"], "English"], "japanese": full_df.at[m["idx"], "Japanese"]}
+            for m in mistakes if isinstance(m, dict)
+        ],
+        direction_label="日本語 → 英語" if direction == "je" else "英語 → 日本語"
+    )
+@app.route("/rough_result")
+@login_required
+def rough_result():
+    quiz_rows = session.get("quiz_rows", [])
+    score = session.get("score", 0)
+    total = len(quiz_rows)
+    direction = session.get("quiz_direction", "je")
+    quiz_type = session.get("quiz_type", "rough")
+
+    # ミス一覧（復習なら全件、通常なら rough_mistakes）
+    mistakes = []
+    if quiz_type == "rough_review":
+        mistakes = session.get("quiz_rows", [])
+    elif quiz_type in ['rough_je', 'rough_ej', 'rough']:
+        key = f"rough_{direction}"
+        mistakes = session.get("rough_mistakes", {}).get(key, [])
+
+    # 表示用に整形
+    mistake_words = []
+    for m in mistakes:
+        if isinstance(m, dict):
+            idx = m["idx"]
+        else:
+            idx = m
+        mistake_words.append({
+            "english": full_df.at[idx, "English"],
+            "japanese": full_df.at[idx, "Japanese"]
+        })
+
+    return render_template(
+        "rough_result.html",
+        score=score,
+        total=total,
+        direction_label="日本語 → 英語" if direction == "je" else "英語 → 日本語",
+        mistake_words=mistake_words
+    )
+
+@app.route("/resume_rough_quiz")
+@login_required
+def resume_rough_quiz():
+    saved = session.get('saved_rough')
+    if not saved:
+        flash("再開できるざっくりクイズが見つかりませんでした。", "warning")
+        return redirect(url_for('rough_menu'))
+
+    session['quiz_rows']      = saved['rows']
+    session['index']          = saved['index']
+    session['score']          = saved['score']
+    session['quiz_direction'] = saved['direction']
+    session['quiz_type']      = saved['quiz_type']
+    session['rough_mistakes'] = saved.get('mistakes', {'rough_je':[], 'rough_ej':[]})
+
+    return redirect(url_for('rough_quiz'))
+
+@app.route("/exit_rough_quiz")
+@login_required
+def exit_rough_quiz_to_menu():
+    # ざっくりクイズ中でなければメインメニューへ
+    quiz_type = session.get("quiz_type", "")
+    if not quiz_type.startswith("rough"):
+        return redirect(url_for("rough_menu"))
+
+    # セーブ用データを saved_rough に格納
+    session['saved_rough'] = {
+        'rows':      session.get('quiz_rows', []),
+        'index':     session.get('index', 0),
+        'score':     session.get('score', 0),
+        'direction': session.get('quiz_direction'),
+        'quiz_type': quiz_type,
+        'mistakes':  session.get('rough_mistakes', {'rough_je':[], 'rough_ej':[]})
+    }
+
+    # クイズ進行用キーをクリア
+    for key in ['quiz_rows', 'index', 'score', 'quiz_direction', 'quiz_type', 'rough_mistakes']:
+        session.pop(key, None)
+
+    return redirect(url_for("rough_menu"))
+@app.route("/exit_rough_quiz_to_range")
+@login_required
+def exit_rough_quiz_to_range():
+    # ざっくりクイズ中でなければメニューへ
+    if session.get('quiz_type') != 'rough':
+        return redirect(url_for('rough_menu'))
+
+    # 保存データを組み立て
+    start, end = session.get('rough_range', (None, None))
+    if start is None:
+        return redirect(url_for('rough_menu'))
+
+    direction = session['quiz_direction']
+    range_key = f"{start}-{end}"
+
+    saved = session.setdefault('saved_rough_states', {})
+    dir_states = saved.setdefault(direction, {})
+    dir_states[range_key] = {
+        'rows':    session.get('quiz_rows', []),
+        'index':   session.get('index', 0),
+        'score':   session.get('score', 0),
+        'mistakes': session.get('rough_mistakes', {'rough_je':[], 'rough_ej':[]})
+    }
+    session['saved_rough_states'] = saved
+
+    # クイズのセッションデータをクリア
+    for k in ['quiz_rows','index','score','quiz_direction','quiz_type','rough_mistakes','rough_range']:
+        session.pop(k, None)
+
+    return redirect(url_for('rough_range_selector', direction=direction))
+
+@app.route("/resume_rough_quiz_with_range/<direction>/<range_key>")
+@login_required
+def resume_rough_quiz_with_range(direction, range_key):
+    saved = session.get('saved_rough_states', {}).get(direction, {})
+    state = saved.get(range_key)
+    if not state:
+        flash("再開できるざっくりクイズが見つかりませんでした。", "warning")
+        return redirect(url_for('rough_range_selector', direction=direction))
+
+    # セッションに戻す
+    session['quiz_rows']      = state['rows']
+    session['index']          = state['index']
+    session['score']          = state['score']
+    session['quiz_direction'] = direction
+    session['quiz_type']      = 'rough'
+    session['rough_mistakes'] = state.get('mistakes', {'rough_je':[], 'rough_ej':[]})
+    # 範囲も復元
+    start, end = map(int, range_key.split('-'))
+    session['rough_range'] = (start, end)
+
+    return redirect(url_for('rough_quiz'))
+
+
+# 関数名とルートを変更
+@app.route("/manage_rough_mistakes", methods=["GET", "POST"])
+@login_required
+def manage_rough_mistakes():
+    if request.method == "POST":
+        indices_to_delete = [int(i) for i in request.form.getlist('delete_indices')]
+        
+        if indices_to_delete:
+            global_mistakes = session.get('global_rough_mistakes', [])
+            
+            updated_mistakes = [
+                mistake for mistake in global_mistakes 
+                if mistake['idx'] not in indices_to_delete
+            ]
+            
+            session['global_rough_mistakes'] = updated_mistakes
+            flash(f"{len(indices_to_delete)}件の単語を復習リストから削除しました。", "success")
+
+        # redirect先を変更
+        return redirect(url_for('manage_rough_mistakes'))
+
+    # GETリクエストの処理
+    mistake_words = []
+    global_mistakes = session.get('global_rough_mistakes', [])
+    
+    unique_indices = sorted(list(set(m['idx'] for m in global_mistakes)))
+    
+    for idx in unique_indices:
+        mistake_words.append({
+            'index': idx,
+            'english': full_df.at[idx, 'English'],
+            'japanese': full_df.at[idx, 'Japanese']
+        })
+
+    # 呼び出すテンプレート名を変更
+    return render_template("manage_rough_mistakes.html", mistake_words=mistake_words)
+
+@app.route("/remove_from_review", methods=["POST"])
+@login_required
+def remove_from_review():
+    # フォームから削除対象の単語のIDを取得
+    index_to_delete = int(request.form.get('word_index'))
+
+    if index_to_delete is not None:
+        # 1. 永続的な復習リストから削除
+        global_mistakes = session.get('global_rough_mistakes', [])
+        updated_global_mistakes = [
+            mistake for mistake in global_mistakes
+            if mistake['idx'] != index_to_delete
+        ]
+        session['global_rough_mistakes'] = updated_global_mistakes
+
+        # 2. 現在進行中の復習クイズリストからも削除
+        # (同じセッションで再度表示されるのを防ぐため)
+        current_review_rows = session.get('quiz_rows', [])
+        updated_review_rows = [
+            mistake for mistake in current_review_rows
+            if mistake['idx'] != index_to_delete
+        ]
+        session['quiz_rows'] = updated_review_rows
+
+        flash(f"単語を復習リストから削除しました。", "success")
+
+    # 次の問題へリダイレクト
+    return redirect(url_for('rough_next_question'))

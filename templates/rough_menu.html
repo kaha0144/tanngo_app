@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container mt-4">
+  <h3 class="text-center mb-4">ざっくり学ぶメニュー</h3>
+  <div class="card-deck">
+
+    <!-- 日本語 → 英語 -->
+    <div class="card">
+      <div class="card-body text-center">
+        <h5 class="card-title">日本語 → 英語</h5>
+        <p class="card-text">意味から英語を選ぼう</p>
+        <a href="{{ url_for('rough_range_selector', direction='je') }}" class="btn btn-primary">範囲を選ぶ</a>
+      </div>
+    </div>
+
+    <!-- 英語 → 日本語 -->
+    <div class="card">
+      <div class="card-body text-center">
+        <h5 class="card-title">英語 → 日本語</h5>
+        <p class="card-text">単語から意味を選ぼう</p>
+        <a href="{{ url_for('rough_range_selector', direction='ej') }}" class="btn btn-success">範囲を選ぶ</a>
+      </div>
+    </div>
+
+    <!-- 復習 -->
+    <div class="card">
+      <div class="card-body text-center">
+        <h5 class="card-title">ざっくり復習</h5>
+        <p class="card-text">前に間違えたざっくり問題のみ</p>
+        <a href="{{ url_for('start_rough_review') }}" class="btn btn-danger">復習する</a>
+        <a href="{{ url_for('manage_rough_mistakes') }}" class="btn btn-warning">間違い単語の管理</a>
+      </div>
+    </div>
+
+  </div>
+
+  <div class="text-center mt-4">
+    <a href="{{ url_for('menu') }}" class="btn btn-secondary">← メニューに戻る</a>
+  </div>
+</div>
+{% endblock %}
+
