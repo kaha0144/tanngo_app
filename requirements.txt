@@ -53,3 +53,5 @@ psycopg2-binary==2.9.9
 openpyxl==3.1.2
 flask-migrate
 python-dotenv
+fuzzywuzzy[speedup]
+python-Levenshtein

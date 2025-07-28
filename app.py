@@ -13,6 +13,8 @@ from functools import wraps
 from sqlalchemy import func
 from flask import jsonify
 load_dotenv() 
+from fuzzywuzzy import fuzz
+
 # --- 初期化 ------------------------------------------------------------------
 app = Flask(__name__)
 login_manager = LoginManager()
@@ -83,30 +85,28 @@ except FileNotFoundError:
         embeddings = None
         print("❌ エラー: word_vectors.pkl が見つかりません。")
 
-def is_answer_similar(user_answer, correct_answer, threshold=0.6):
+
+def is_answer_similar(user_answer, correct_answer, threshold=60):  # ← 数値を調整
     user_ans_clean = user_answer.strip().lower()
     correct_ans_clean = correct_answer.strip().lower()
 
-    # sentence_transformersのベクトルが無い場合、部分一致で判断
-    if embeddings is None:
-        return user_ans_clean and user_ans_clean in correct_ans_clean
-
-    # sentence_transformersがRenderで使えない場合も部分一致で対応
     try:
         from sentence_transformers import util
     except ImportError:
-        return user_ans_clean and user_ans_clean in correct_ans_clean
+        # fuzzyマッチでスコアを計算
+        similarity = fuzz.partial_ratio(user_ans_clean, correct_ans_clean)
+        return similarity >= threshold
 
-    # ベクトルがある場合はコサイン類似度で比較
+    # sentence_transformers 使えるとき（ローカル用）
     emb1 = embeddings.get(user_answer)
     emb2 = embeddings.get(correct_answer)
     if emb1 is not None and emb2 is not None:
         sim = util.cos_sim(emb1, emb2).item()
-        return sim >= threshold
+        return sim >= (threshold / 100.0)
 
-    # ベクトルが取得できなかった場合も部分一致にフォールバック
-    return user_ans_clean and user_ans_clean in correct_ans_clean
-
+    # fallback: fuzzyマッチ
+    similarity = fuzz.partial_ratio(user_ans_clean, correct_ans_clean)
+    return similarity >= threshold
 
 # （以降のコードはそのまま）
 
