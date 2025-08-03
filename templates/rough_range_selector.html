@@ -21,7 +21,12 @@
         学習する範囲を選んでください（{{ '日本語 → 英語' if direction == 'je' else '英語 → 日本語' }}）
       </p>
     </div>
-
+    <div class="text-center my-8">
+            <a href="{{ url_for('menu') }}"
+               class="inline-block bg-white hover:bg-gray-200 text-gray-800 font-semibold py-2 px-6 rounded-lg shadow-md transition duration-300">
+                メインメニューに戻る
+            </a>
+    </div>
     <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
       {% for start, end in ranges %}
         {% set range_key = start ~ '-' ~ end %}
@@ -68,7 +73,7 @@
     </div>
 
     <div class="mt-12 text-center">
-      <a href="{{ url_for('rough_menu') }}"
+      <a href="{{ url_for('menu') }}"
          class="inline-block bg-white hover:bg-gray-200 text-gray-800 font-semibold py-2 px-6 rounded-lg shadow-md transition duration-300">
         メニューに戻る
       </a>

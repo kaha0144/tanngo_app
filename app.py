@@ -35,12 +35,12 @@ else:
         'password': 'kaha0144',
         'host': 'localhost',
         'port': '5432',
-        'database': 'postgres'
+        'database': 'kawamataharuka'
     }
     app.config['SQLALCHEMY_DATABASE_URI'] = 'postgresql://{user}:{password}@{host}:{port}/{database}'.format(**db_info)
 # --- DB設定 ---
-app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('SQLALCHEMY_DATABASE_URI')
-app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+#app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('SQLALCHEMY_DATABASE_URI')
+#app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 db = SQLAlchemy(app)
 migrate = Migrate(app, db)
@@ -56,14 +56,24 @@ class User(UserMixin, db.Model):
 
     def __repr__(self):
         return f"<User {self.username}>"
+class ContactMessage(db.Model):
+    __tablename__ = 'contact_messages'
+    id         = db.Column(db.Integer, primary_key=True)
+    user_id    = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    subject    = db.Column(db.String(200), nullable=False)
+    body       = db.Column(db.Text,    nullable=False)
+    timestamp  = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    is_deleted = db.Column(db.Boolean, nullable=False, default=False)
+    user = db.relationship('User', backref=db.backref('contact_messages', lazy=True))
 
 class QuizAttempt(db.Model):
     __tablename__ = 'quiz_attempts'
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
     timestamp = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
-    
+
     user = db.relationship('User', backref=db.backref('attempts', lazy=True))
+
 
 @login_manager.user_loader
 def load_user(user_id):
@@ -237,7 +247,6 @@ def login():
     return render_template("login.html")
 
 @app.route("/logout")
-@login_required
 def logout():
     logout_user()
     session.clear()
@@ -259,27 +268,31 @@ def menu():
     quiz_direction = session.get('quiz_direction', 'ej')
     saved_states_for_direction = session.get('saved_states', {}).get(quiz_direction, {})
 
-    # --- ★★★ ここからが新しいランキング集計ロジック ★★★ ---
     one_week_ago = datetime.utcnow() - timedelta(days=7)
     
-    # 直近1週間の解答数をユーザーごとに集計し、上位3名を取得
-    top_users = db.session.query(
-        User,
-        func.count(QuizAttempt.id).label('weekly_attempts')
-    ).join(QuizAttempt, User.id == QuizAttempt.user_id)\
-    .filter(QuizAttempt.timestamp >= one_week_ago)\
-    .group_by(User.id)\
-    .order_by(func.count(QuizAttempt.id).desc())\
-    .limit(3).all()
-    # --- ★★★ ここまで ★★★
+    # 管理者を除外するフィルタを追加
+    top_users = (
+        db.session.query(
+            User,
+            func.count(QuizAttempt.id).label('weekly_attempts')
+        )
+        .join(QuizAttempt, User.id == QuizAttempt.user_id)
+        .filter(
+            QuizAttempt.timestamp >= one_week_ago,
+            User.is_admin == False   # ← ここで管理者を除外
+        )
+        .group_by(User.id)
+        .order_by(func.count(QuizAttempt.id).desc())
+        .limit(3)
+        .all()
+    )
 
     return render_template("menu.html", 
         saved_random_state=saved_states_for_direction.get('random'),
         saved_detailed_states=saved_states_for_direction.get('detailed', {}),
         saved_review_state=saved_states_for_direction.get('review'),
-        top_users=top_users # ★ ランキングデータをテンプレートに渡す
+        top_users=top_users
     )
-
 # --- クイズ開始・再開ルート ----------------------------------------------------
 @app.route('/start_new_random_quiz')
 @login_required
@@ -375,15 +388,52 @@ def resume_detailed_quiz(range_key):
 @app.route("/retry")
 @login_required
 def retry_mistakes():
-    commit_quiz_mistakes()
-    quiz_direction = session.get('quiz_direction', 'ej')
-    saved_review_state = session.get('saved_states', {}).get(quiz_direction, {}).get('review')
-    if saved_review_state:
-        session['saved_states'][quiz_direction].pop('review', None)
-        session.modified = True
-        _init_quiz_session('retry', initial_rows=saved_review_state.get('rows'), initial_index=saved_review_state.get('index', 0), initial_score=saved_review_state.get('score', 0), initial_session_mistakes=saved_review_state.get('session_mistakes', []))
-        return redirect(url_for('quiz'))
+    """
+    間違い単語の復習セッションを開始するルート。
+    - 中断されたセッションがあれば再開する機能。
+    - 新しく復習を開始する機能。
+    - 復習する間違いがない場合に専用ページを表示する機能。
+    """
+    # URLクエリパラメータから 'new=True' をチェックし、新しいセッションを開始するか判断
+    start_new = request.args.get('new', default=False, type=bool)
     
+    quiz_direction = session.get('quiz_direction', 'ej')
+    saved_states = session.get('saved_states', {})
+    saved_review_state = saved_states.get(quiz_direction, {}).get('review')
+
+    # --- 1. 中断セッションの再開 ---
+    # 'new=True' ではなく、かつ保存されたデータがある場合にセッションを再開
+    if not start_new and saved_review_state:
+        # 保存データをセッションから削除
+        session['saved_states'][quiz_direction].pop('review', None)
+        if not session['saved_states'][quiz_direction]:
+            session['saved_states'].pop(quiz_direction, None)
+        session.modified = True
+        
+        # 保存されたデータでクイズを初期化
+        _init_quiz_session(
+            'retry', 
+            initial_rows=saved_review_state.get('rows'), 
+            initial_index=saved_review_state.get('index', 0), 
+            initial_score=saved_review_state.get('score', 0), 
+            initial_session_mistakes=saved_review_state.get('session_mistakes', [])
+        )
+        return redirect(url_for('quiz'))
+
+    # --- 2. 新しい復習セッションの開始 ---
+    # 'new=True' の場合、または中断データがなかった場合にここに来る
+    
+    # もし 'new=True' で中断データが存在した場合は、それをクリアする
+    if start_new and saved_review_state:
+        session['saved_states'][quiz_direction].pop('review', None)
+        if not session['saved_states'][quiz_direction]:
+            session['saved_states'].pop(quiz_direction, None)
+        session.modified = True
+
+    # DBなどに保存されている間違いをコミット（必要に応じて）
+    commit_quiz_mistakes()
+
+    # セッションから全ての間違いデータを収集
     random_mistakes = session.get("random_quiz_mistakes", [])
     detailed_mistakes_dict = session.get("detailed_quiz_mistakes", {})
     all_mistakes = list(random_mistakes)
@@ -391,13 +441,16 @@ def retry_mistakes():
         for key in detailed_mistakes_dict:
             all_mistakes.extend(detailed_mistakes_dict[key])
     
+    # 辞書のリストはsetに入れられないため、タプルのリストに変換して重複を削除
     unique_mistakes_tuples = set(tuple(d.items()) for d in all_mistakes)
     unique_mistakes = [dict(t) for t in unique_mistakes_tuples]
     
+    # ★★★ 修正箇所 ★★★
+    # 間違いが一件もなかった場合、専用ページを表示する
     if not unique_mistakes:
-        # ★★★ 修正箇所: メッセージを表示するページにリダイレクト ★★★
-        return redirect(url_for("manage_mistakes"))
+        return render_template("no_mistakes.html")
 
+    # 間違いがあれば、シャッフルしてクイズを開始
     random.shuffle(unique_mistakes)
     _init_quiz_session('retry', initial_rows=unique_mistakes) 
     return redirect(url_for("quiz"))
@@ -408,102 +461,167 @@ def retry_mistakes():
 def quiz():
     quiz_type = session.get('current_quiz_type')
     global_quiz_direction = session.get('quiz_direction', 'ej')
-    quiz_rows = get_quiz_rows_from_session_params(session.get('quiz_seed'), session.get('quiz_rows'))
+    quiz_rows = get_quiz_rows_from_session_params(
+        session.get('quiz_seed'),
+        session.get('quiz_rows')
+    )
     session['total_questions'] = len(quiz_rows)
+
+    # クイズ開始前 or 全問回答済み
     if not quiz_rows:
         flash("クイズセッションが正しく開始されていません。", "error")
         return redirect(url_for("menu"))
-
     idx = session.get("index", 0)
     if idx >= len(quiz_rows):
         return redirect(url_for("result"))
-    
-    current_question_item = quiz_rows[idx]
-    
+
+    # 出題データ取得
+    current_item = quiz_rows[idx]
     if quiz_type == 'retry':
-        row_index = current_question_item['idx']
-        question_direction = current_question_item['dir']
+        row_index = current_item['idx']
+        question_direction = current_item['dir']
     else:
-        row_index = current_question_item
+        row_index = current_item
         question_direction = global_quiz_direction
 
-    english_word = str(full_df.at[row_index, "English"]).strip()
-    japanese_word = str(full_df.at[row_index, "Japanese"]).strip()
-    question, correct_answer = (english_word, japanese_word) if question_direction == 'ej' else (japanese_word, english_word)
-    
+    english = str(full_df.at[row_index, "English"]).strip()
+    japanese = str(full_df.at[row_index, "Japanese"]).strip()
+    question, correct_answer = (
+        (english, japanese)
+        if question_direction == 'ej'
+        else (japanese, english)
+    )
+
+    # ヒント（日本語→英語のみ）
     hints = {}
-    if question_direction == 'je':
-        hints['first_letter'] = correct_answer[0] if correct_answer else ''
+    if question_direction == 'je' and correct_answer:
+        hints['first_letter'] = correct_answer[0]
         hints['placeholder'] = ' '.join(['_' for _ in correct_answer])
         hints['word_length'] = len(correct_answer)
 
     if request.method == "POST":
+        # 正誤判定
         user_answer = request.form.get("user_answer", "").strip()
-        correct = (user_answer.lower() == correct_answer.lower()) if question_direction == 'je' else is_answer_similar(user_answer, correct_answer)
+        correct = (
+            user_answer.lower() == correct_answer.lower()
+            if question_direction == 'je'
+            else is_answer_similar(user_answer, correct_answer)
+        )
 
+        # フィードバック用セッション設定
         session['last_result'] = "正解" if correct else "不正解"
         session['user_answer_for_feedback'] = user_answer
-        session['correct_english_for_feedback'] = english_word
-        session['correct_japanese_for_feedback'] = japanese_word
-        
-        current_mistakes = session.get('current_quiz_mistakes_indices', [])
-        mistake_to_check = {'idx': row_index, 'dir': question_direction}
+        session['correct_english_for_feedback'] = english
+        session['correct_japanese_for_feedback'] = japanese
 
+        # 間違いリスト更新
+        current_mistakes = session.get('current_quiz_mistakes_indices', [])
+        marker = {'idx': row_index, 'dir': question_direction}
         if correct:
+            # スコア加算
             session["score"] = session.get("score", 0) + 1
-            if mistake_to_check in current_mistakes:
-                current_mistakes.remove(mistake_to_check)
-                session['current_quiz_mistakes_indices'] = current_mistakes
+            if marker in current_mistakes:
+                current_mistakes.remove(marker)
         else:
-            if mistake_to_check not in current_mistakes:
-                current_mistakes.append(mistake_to_check)
-                session['current_quiz_mistakes_indices'] = current_mistakes
+            if marker not in current_mistakes:
+                current_mistakes.append(marker)
+        session['current_quiz_mistakes_indices'] = current_mistakes
+
+        # ここで「解いた問題」をカウント
+        session["index"] = idx + 1
+
+        # DBに記録
         attempt = QuizAttempt(user_id=current_user.id)
         db.session.add(attempt)
         db.session.commit()
+
         session['show_feedback_and_next_button'] = True
 
-    session['current_row_index'] = row_index
-    template_to_render = "mistake.html" if quiz_type == 'retry' else "quiz.html"
+        # 回答後は同じテンプレートでフィードバック表示
+        template = "mistake.html" if quiz_type == 'retry' else "quiz.html"
+        return render_template(
+            template,
+            question=question,
+            result=session['last_result'],
+            user_answer_for_feedback=user_answer,
+            correct_english_for_feedback=english,
+            correct_japanese_for_feedback=japanese,
+            current_question_number=idx + 1,
+            total_questions=len(quiz_rows),
+            show_feedback_and_next_button=True,
+            hints=hints,
+            current_row_index=row_index
+        )
+
+    # GET時はただ出題
+    template = "mistake.html" if quiz_type == 'retry' else "quiz.html"
     return render_template(
-        template_to_render,
+        template,
         question=question,
-        result=session.get("last_result"),
-        user_answer_for_feedback=session.get("user_answer_for_feedback"),
-        correct_english_for_feedback=session.get("correct_english_for_feedback"),
-        correct_japanese_for_feedback=session.get("correct_japanese_for_feedback"),
+        result=None,
+        user_answer_for_feedback="",
+        correct_english_for_feedback="",
+        correct_japanese_for_feedback="",
         current_question_number=idx + 1,
         total_questions=len(quiz_rows),
-        show_feedback_and_next_button=session.get('show_feedback_and_next_button', False),
-        hints=hints
+        show_feedback_and_next_button=False,
+        hints=hints,
+        current_row_index=row_index
     )
 
 @app.route("/next_question")
 @login_required
 def next_question():
-    session["index"] = session.get("index", 0) + 1
+    # フィードバッククリアして再び /quiz を表示するだけ
     session['show_feedback_and_next_button'] = False
     session.pop('user_answer_for_feedback', None)
     session.pop('correct_english_for_feedback', None)
     session.pop('correct_japanese_for_feedback', None)
-    
-    quiz_rows = get_quiz_rows_from_session_params(session.get('quiz_seed'), session.get('quiz_rows'))
-    if session["index"] >= len(quiz_rows):
+
+    quiz_rows = get_quiz_rows_from_session_params(
+        session.get('quiz_seed'),
+        session.get('quiz_rows')
+    )
+    # 全問解答済みなら結果へ
+    if session.get("index", 0) >= len(quiz_rows):
         return redirect(url_for("result"))
-    
+
     return redirect(url_for("quiz"))
+
+# app.py
 
 @app.route("/result")
 @login_required
 def result():
+    # 最初に間違いを永続リストに保存する
     commit_quiz_mistakes()
+
     score = session.get("score", 0)
     total = session.get("total_questions", 0)
     
-    # 結果画面では間違いリストは表示しないので、シンプルにクリアしてリダイレクト
-    _clear_current_quiz_session_vars()
-    return render_template("result.html", score=score, total=total)
+    # ▼▼▼ ここからが修正・追加部分 ▼▼▼
+    # セッションをクリアする前に、このクイズの間違いリストを取得
+    current_mistakes = session.get('current_quiz_mistakes_indices', [])
+    unique_indices = {mistake['idx'] for mistake in current_mistakes}
+    
+    mistake_words = []
+    for idx in sorted(list(unique_indices)):
+        mistake_words.append({
+            'english': full_df.at[idx, 'English'],
+            'japanese': full_df.at[idx, 'Japanese']
+        })
+    # ▲▲▲ ここまで ▲▲▲
 
+    # クイズ関連のセッション変数をクリア
+    _clear_current_quiz_session_vars()
+    
+    # テンプレートに mistake_words を渡す
+    return render_template(
+        "result.html", 
+        score=score, 
+        total=total, 
+        mistake_words=mistake_words
+    )
 @app.route("/current_result")
 @login_required
 def current_result():
@@ -595,57 +713,88 @@ def admin_required(f):
         return f(*args, **kwargs)
     return decorated_function
 
-@app.route("/admin", methods=["GET", "POST"])
-@login_required
-@admin_required
-def admin_page():
-    if request.method == "POST":
-        # 新規ユーザー作成処理
-        username = request.form.get("username")
-        password = request.form.get("password")
-        nickname = request.form.get("nickname")
-        is_admin = 'is_admin' in request.form
+# app.py
 
-        if not username or not password or not nickname:
-            flash("すべてのフィールドを入力してください。", "warning")
+@app.route("/admin", methods=["GET", "POST"]) # GETとPOSTの両方を受け付ける
+@login_required
+@admin_required # admin_requiredデコレータがある場合
+def admin_page():
+    # --- POSTリクエスト（フォームが送信された時）の処理 ---
+    if request.method == "POST":
+        username = request.form.get("username")
+        nickname = request.form.get("nickname")
+        password = request.form.get("password")
+        # 'on'という文字列が送られてくるかで判定
+        is_admin = request.form.get('is_admin') == 'on'
+
+        if not all([username, nickname, password]):
+            flash("ユーザー名、ニックネーム、パスワードは必須です。", "danger")
         elif User.query.filter_by(username=username).first():
-            flash("そのユーザー名は既に使用されています。", "warning")
+            flash(f"ユーザー名「{username}」は既に使用されています。", "danger")
         else:
             hashed_pass = generate_password_hash(password, method="pbkdf2:sha256")
             new_user = User(username=username, password=hashed_pass, nickname=nickname, is_admin=is_admin)
             db.session.add(new_user)
             db.session.commit()
-            flash(f"ユーザー「{nickname}」が作成されました。", "success")
+            flash(f"新しいユーザー「{nickname}」を登録しました。", "success")
+        
+        # 処理が終わったら、ページを再読み込みさせるためにリダイレクトする
         return redirect(url_for('admin_page'))
 
-    # --- 学習状況の集計 ---
+    # --- GETリクエスト（ページを普通に表示する時）の処理 ---
+    # ユーザー統計
     one_week_ago = datetime.utcnow() - timedelta(days=7)
-    users = User.query.order_by(User.id).all()
+    user_stats = db.session.query(
+            User,
+            func.count(QuizAttempt.id).label('weekly_attempts')
+        ).join(QuizAttempt, User.id == QuizAttempt.user_id, isouter=True).filter(
+            QuizAttempt.timestamp >= one_week_ago,
+            User.is_admin == False
+        ).group_by(User.id).order_by(func.count(QuizAttempt.id).desc()).all()
+
+    # お問い合わせ一覧
+    contact_msgs = ContactMessage.query.filter_by(is_deleted=False).order_by(ContactMessage.timestamp.desc()).all()
     
-    user_stats = []
-    for user in users:
-        # 直近1週間の解答数をカウント
+    # 全ユーザーの一覧
+    all_users = User.query.order_by(User.id).all()
+    # ▼▼▼ ここからが修正・追加部分 ▼▼▼
+    # 各ユーザーの週間解答数を計算して、ユーザーオブジェクトに直接追加する
+    for user in all_users:
         attempt_count = QuizAttempt.query.filter(
             QuizAttempt.user_id == user.id,
             QuizAttempt.timestamp >= one_week_ago
         ).count()
-        user_stats.append({'user': user, 'weekly_attempts': attempt_count})
-
-    return render_template("admin.html", user_stats=user_stats)
+        # 'weekly_attempts'という名前で、計算結果をユーザーオブジェクトに持たせる
+        user.weekly_attempts = attempt_count
+    # ▲▲▲ ここまで ▲▲▲
+    # テンプレートに必要なデータを全て渡して表示
+    return render_template("admin.html",
+        user_stats=user_stats,
+        contact_msgs=contact_msgs,
+        all_users=all_users
+    )
+# app.py
 
 @app.route("/admin/delete_user/<int:user_id>", methods=["POST"])
 @login_required
 @admin_required
 def delete_user(user_id):
-    user_to_delete = User.query.get_or_404(user_id)
-    if user_to_delete.id == current_user.id:
+    # 自分自身を削除しようとした場合はエラーにする
+    if user_id == current_user.id:
         flash("自分自身のアカウントは削除できません。", "danger")
-    else:
-        # 関連する学習履歴も削除
-        QuizAttempt.query.filter_by(user_id=user_id).delete()
-        db.session.delete(user_to_delete)
-        db.session.commit()
-        flash(f"ユーザー「{user_to_delete.nickname}」を削除しました。", "success")
+        return redirect(url_for('admin_page'))
+
+    user_to_delete = User.query.get_or_404(user_id)
+
+    # --- 関連データを先に削除 ---
+    ContactMessage.query.filter_by(user_id=user_id).delete() # 👈 お問い合わせ履歴を削除
+    QuizAttempt.query.filter_by(user_id=user_id).delete()    # 👈 クイズ履歴を削除
+    
+    # ユーザー本体を削除
+    db.session.delete(user_to_delete)
+    db.session.commit()
+
+    flash(f"ユーザー「{user_to_delete.nickname}」を関連データと共に削除しました。", "success")
     return redirect(url_for('admin_page'))
 
 @app.route("/search", methods=["GET", "POST"])
@@ -829,37 +978,47 @@ def start_rough_quiz(direction):
     session['rough_mistakes'] = session.get('rough_mistakes', { 'rough_je': [], 'rough_ej': [] })
     return redirect(url_for("rough_quiz"))
 
-@app.route("/start_rough_review")
+@app.route("/start_rough_review", methods=["GET", "POST"])
 @login_required
 def start_rough_review():
-    # 1. 永続リストと一時リストの両方から間違いを集める
+    # 復習対象となるユニークな単語リストを取得する（このロジックは共通）
     all_mistakes = session.get('global_rough_mistakes', [])
-    
     temp_mistakes = session.get('rough_mistakes', {})
     for direction in ['rough_je', 'rough_ej']:
         all_mistakes.extend(temp_mistakes.get(direction, []))
 
-    # 2. 【重要】リストから重複を削除する
     unique_mistakes = []
     seen_indices = set()
     for mistake in all_mistakes:
-        # (単語のID, 出題方向) の組み合わせで重複をチェック
         identifier = (mistake['idx'], mistake['dir'])
         if identifier not in seen_indices:
             unique_mistakes.append(mistake)
             seen_indices.add(identifier)
 
-    # 3. 重複削除後のリストでクイズを開始する
-    if not unique_mistakes:
-        flash("ざっくり復習する単語がありません。", "warning")
-        return redirect(url_for("rough_menu"))
-        
-    random.shuffle(unique_mistakes)
-    session['quiz_type'] = 'rough_review'
-    session['quiz_rows'] = unique_mistakes  # 重複がないリストを使用
-    session['index'] = 0
-    session['score'] = 0
-    return redirect(url_for("rough_quiz"))
+    # クイズ開始ボタンが押された時 (POST)
+    if request.method == "POST":
+        if not unique_mistakes:
+            # 念のためチェック
+            return redirect(url_for("rough_menu"))
+            
+        random.shuffle(unique_mistakes)
+        session['quiz_type'] = 'rough_review'
+        session['quiz_rows'] = unique_mistakes
+        session['index'] = 0
+        session['score'] = 0
+        return redirect(url_for("rough_quiz"))
+
+    # ページを最初に表示する時 (GET)
+    # 表示用に単語情報を整形
+    mistake_words_for_display = []
+    for m in unique_mistakes:
+        mistake_words_for_display.append({
+            'english': full_df.at[m['idx'], 'English'],
+            'japanese': full_df.at[m['idx'], 'Japanese']
+        })
+    
+    # 復習の確認・開始ページを表示
+    return render_template('prepare_rough_review.html', mistake_words=mistake_words_for_display)
 
 @app.route("/rough_quiz", methods=["GET", "POST"])
 @login_required
@@ -979,7 +1138,7 @@ def rough_next_question():
 def rough_range_selector(direction):
     if direction not in ['je', 'ej']:
         flash("無効な出題方向です。", "danger")
-        return redirect(url_for('rough_menu'))
+        return redirect(url_for('menu'))
 
     # 単語範囲の生成（例：1〜50、51〜100...）
     total_words = len(full_df)
@@ -999,13 +1158,13 @@ def rough_range_selector(direction):
 def start_rough_quiz_with_range(direction, start, end):
     if direction not in ['je', 'ej']:
         flash("無効な方向です", "danger")
-        return redirect(url_for('rough_menu'))
+        return redirect(url_for('menu'))
 
     selected_df = full_df.iloc[start-1:end].copy()
 
     if selected_df.empty:
         flash("選択された範囲に単語が存在しません", "warning")
-        return redirect(url_for('rough_menu'))
+        return redirect(url_for('menu'))
 
     selected_rows = selected_df.sample(min(50, len(selected_df)), replace=False).reset_index()
 
@@ -1090,7 +1249,7 @@ def resume_rough_quiz():
     saved = session.get('saved_rough')
     if not saved:
         flash("再開できるざっくりクイズが見つかりませんでした。", "warning")
-        return redirect(url_for('rough_menu'))
+        return redirect(url_for('menu'))
 
     session['quiz_rows']      = saved['rows']
     session['index']          = saved['index']
@@ -1107,7 +1266,7 @@ def exit_rough_quiz_to_menu():
     # ざっくりクイズ中でなければメインメニューへ
     quiz_type = session.get("quiz_type", "")
     if not quiz_type.startswith("rough"):
-        return redirect(url_for("rough_menu"))
+        return redirect(url_for("menu"))
 
     # セーブ用データを saved_rough に格納
     session['saved_rough'] = {
@@ -1123,18 +1282,18 @@ def exit_rough_quiz_to_menu():
     for key in ['quiz_rows', 'index', 'score', 'quiz_direction', 'quiz_type', 'rough_mistakes']:
         session.pop(key, None)
 
-    return redirect(url_for("rough_menu"))
+    return redirect(url_for("menu"))
 @app.route("/exit_rough_quiz_to_range")
 @login_required
 def exit_rough_quiz_to_range():
     # ざっくりクイズ中でなければメニューへ
     if session.get('quiz_type') != 'rough':
-        return redirect(url_for('rough_menu'))
+        return redirect(url_for('menu'))
 
     # 保存データを組み立て
     start, end = session.get('rough_range', (None, None))
     if start is None:
-        return redirect(url_for('rough_menu'))
+        return redirect(url_for('menu'))
 
     direction = session['quiz_direction']
     range_key = f"{start}-{end}"
@@ -1243,3 +1402,113 @@ def remove_from_review():
 
     # 次の問題へリダイレクト
     return redirect(url_for('rough_next_question'))
+
+@app.route("/all_manage_mistakes", methods=["GET", "POST"])
+@login_required
+def all_manage_mistakes():
+    # POSTリクエスト: 選択された単語を全てのリストから削除
+    if request.method == "POST":
+        indices_to_delete_str = request.form.getlist('delete_indices')
+        if not indices_to_delete_str:
+            flash("削除する単語が選択されていません。", "warning")
+            return redirect(url_for('all_manage_mistakes'))
+
+        indices_to_delete = {int(i) for i in indices_to_delete_str}
+
+        # 1. 'global_rough_mistakes' から削除
+        rough_mistakes = session.get('global_rough_mistakes', [])
+        session['global_rough_mistakes'] = [m for m in rough_mistakes if m['idx'] not in indices_to_delete]
+
+        # 2. 'random_quiz_mistakes' から削除
+        random_mistakes = session.get('random_quiz_mistakes', [])
+        session['random_quiz_mistakes'] = [m for m in random_mistakes if m['idx'] not in indices_to_delete]
+
+        # 3. 'detailed_quiz_mistakes' から削除 (辞書なので少し複雑)
+        detailed_mistakes = session.get('detailed_quiz_mistakes', {})
+        new_detailed_mistakes = {}
+        for key, mistakes_list in detailed_mistakes.items():
+            filtered_list = [m for m in mistakes_list if m['idx'] not in indices_to_delete]
+            if filtered_list:
+                new_detailed_mistakes[key] = filtered_list
+        session['detailed_quiz_mistakes'] = new_detailed_mistakes
+        
+        flash(f"{len(indices_to_delete)}件の単語を全ての間違いリストから削除しました。", "success")
+        return redirect(url_for('all_manage_mistakes'))
+
+    # GETリクエスト: 全ての間違いリストを統合して表示
+    all_mistake_indices = set()
+
+    # 全てのリストからユニークな単語IDを収集
+    for m in session.get('global_rough_mistakes', []): all_mistake_indices.add(m['idx'])
+    for m in session.get('random_quiz_mistakes', []): all_mistake_indices.add(m['idx'])
+    for mistakes_list in session.get('detailed_quiz_mistakes', {}).values():
+        for m in mistakes_list: all_mistake_indices.add(m['idx'])
+
+    # 表示用に単語情報を取得
+    mistake_words = []
+    for idx in sorted(list(all_mistake_indices)):
+        mistake_words.append({
+            'index': idx,
+            'english': full_df.at[idx, 'English'],
+            'japanese': full_df.at[idx, 'Japanese']
+        })
+        
+    return render_template("all_manage_mistakes.html", mistake_words=mistake_words)
+
+
+@app.route("/contact", methods=["GET", "POST"])
+@login_required
+def contact():
+    if request.method == "POST":
+        subject = request.form.get("subject", "").strip()
+        body    = request.form.get("message", "").strip()
+        if not subject or not body:
+            flash("件名と内容を両方入力してください。", "warning")
+            return redirect(url_for("contact"))
+
+        # DBに保存
+        msg = ContactMessage(
+            user_id=current_user.id,
+            subject=subject,
+            body=body
+        )
+        db.session.add(msg)
+        db.session.commit()
+
+        flash("お問い合わせを送信しました。管理者が確認次第、対応いたします。", "success")
+        return redirect(url_for("menu"))
+
+    # GET: フォーム表示
+    return render_template("contact.html", user_email=current_user.username)
+
+@app.route("/admin/delete_message/<int:msg_id>", methods=["POST"])
+@login_required
+@admin_required
+def delete_message(msg_id):
+    msg = ContactMessage.query.get_or_404(msg_id)
+    msg.is_deleted = True
+    db.session.commit()
+    flash("お問い合わせを削除リストに移動しました。", "warning")
+    return redirect(url_for('admin_page'))
+
+# 復元
+@app.route("/admin/restore_message/<int:msg_id>", methods=["POST"])
+@login_required
+@admin_required
+def restore_message(msg_id):
+    msg = ContactMessage.query.get_or_404(msg_id)
+    msg.is_deleted = False
+    db.session.commit()
+    flash("お問い合わせを復元しました。", "success")
+    return redirect(url_for('admin_page'))
+
+@app.route("/admin/deleted")
+@login_required
+@admin_required
+def deleted_messages_page():
+    # is_deletedがTrueのメッセージだけを取得
+    deleted_msgs = ContactMessage.query.filter_by(is_deleted=True).order_by(ContactMessage.timestamp.desc()).all()
+    
+    # 新しいHTMLテンプレートにデータを渡して表示
+    return render_template("deleted_messages.html", contact_msgs=deleted_msgs)
+

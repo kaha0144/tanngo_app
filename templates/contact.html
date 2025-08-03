@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="container my-5">
+  <h2 class="mb-4">お問い合わせ</h2>
+  <form method="POST" action="{{ url_for('contact') }}">
+    <div class="mb-3">
+      <label for="subject" class="form-label">件名</label>
+      <input type="text" class="form-control" id="subject" name="subject" required>
+    </div>
+    <div class="mb-3">
+      <label for="message" class="form-label">内容</label>
+      <textarea class="form-control" id="message" name="message" rows="6" required></textarea>
+    </div>
+    <button type="submit" class="btn btn-primary">送信</button>
+    <a href="{{ url_for('menu') }}" class="btn btn-secondary ms-2">キャンセル</a>
+  </form>
+</div>
+{% endblock %}

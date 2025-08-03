@@ -100,7 +100,7 @@
                 <p class="text-base mt-2">あなたの答え: <strong class="text-gray-800">{{ user_answer_for_feedback }}</strong></p>
             </div>
             <div class="mt-4">
-                <a href="{{ url_for('remove_single_mistake', row_index=session.current_row_index) }}"
+                <a href="{{ url_for('remove_single_mistake', row_index=current_row_index) }}"
                    class="block w-full bg-red-600 hover:bg-red-700 text-white font-semibold py-3 px-4 rounded-lg shadow-md text-sm">
                     この単語を復習リストから削除
                 </a>

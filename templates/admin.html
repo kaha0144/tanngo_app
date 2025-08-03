@@ -1,98 +1,107 @@
-<!DOCTYPE html>
-<html lang="ja">
-<head>
-    <meta charset="UTF-8">
-    <title>管理者ページ</title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-</head>
-<body>
-    <div class="container my-5">
-        <div class="d-flex justify-content-between align-items-center mb-4">
-            <h1 class="h2">管理者ページ</h1>
-            <a href="{{ url_for('menu') }}" class="btn btn-secondary">メニューに戻る</a>
-        </div>
+{% extends "base.html" %}
+{% block content %}
+<div class="container my-5">
+  <div class="d-flex justify-content-between align-items-center mb-4">
+    <h2>管理者ページ</h2>
+    <a href="{{ url_for('menu') }}" class="btn btn-primary">メニューに戻る</a>
+  </div>
 
-        {% with messages = get_flashed_messages(with_categories=true) %}
-            {% if messages %}
-                {% for category, message in messages %}
-                    <div class="alert alert-info">{{ message }}</div>
-                {% endfor %}
-            {% endif %}
-        {% endwith %}
-
-        <div class="card mb-4">
-            <div class="card-header">
-                新規ユーザー作成
-            </div>
-            <div class="card-body">
-                <form action="{{ url_for('admin_page') }}" method="POST">
-                    <div class="row g-3">
-                        <div class="col-md-3">
-                            <input type="text" name="username" class="form-control" placeholder="ユーザー名 (ログインID)" required>
-                        </div>
-                        <div class="col-md-3">
-                            <input type="text" name="nickname" class="form-control" placeholder="ニックネーム" required>
-                        </div>
-                        <div class="col-md-3">
-                            <input type="password" name="password" class="form-control" placeholder="パスワード" required>
-                        </div>
-                        <div class="col-md-2 d-flex align-items-center">
-                            <div class="form-check">
-                                <input class="form-check-input" type="checkbox" name="is_admin" id="isAdminCheck">
-                                <label class="form-check-label" for="isAdminCheck">管理者にする</label>
-                            </div>
-                        </div>
-                        <div class="col-md-1">
-                            <button type="submit" class="btn btn-primary w-100">作成</button>
-                        </div>
-                    </div>
-                </form>
-            </div>
-        </div>
-
-        <div class="card">
-            <div class="card-header">
-                ユーザー管理・学習状況
-            </div>
-            <div class="card-body">
-                <table class="table table-striped">
-                    <thead>
-                        <tr>
-                            <th>ID</th>
-                            <th>ユーザー名</th>
-                            <th>ニックネーム</th>
-                            <th>役割</th>
-                            <th>直近1週間の解答数</th>
-                            <th>操作</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for stat in user_stats %}
-                        <tr>
-                            <td>{{ stat.user.id }}</td>
-                            <td>{{ stat.user.username }}</td>
-                            <td>{{ stat.user.nickname }}</td>
-                            <td>
-                                {% if stat.user.is_admin %}
-                                    <span class="badge bg-danger">管理者</span>
-                                {% else %}
-                                    <span class="badge bg-secondary">一般</span>
-                                {% endif %}
-                            </td>
-                            <td>{{ stat.weekly_attempts }} 問</td>
-                            <td>
-                                {% if stat.user.id != current_user.id %}
-                                <form action="{{ url_for('delete_user', user_id=stat.user.id) }}" method="POST" onsubmit="return confirm('本当にこのユーザーを削除しますか？');">
-                                    <button type="submit" class="btn btn-sm btn-danger">削除</button>
-                                </form>
-                                {% endif %}
-                            </td>
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-            </div>
-        </div>
+  <div class="card mb-5">
+    <div class="card-header">
+      <h4>新規ユーザー登録</h4>
     </div>
-</body>
-</html>
+    <div class="card-body">
+      <form action="{{ url_for('admin_page') }}" method="post">
+        <div class="mb-3">
+          <label for="username" class="form-label">ユーザー名 (ログインID)</label>
+          <input type="text" class="form-control" id="username" name="username" required>
+        </div>
+        <div class="mb-3">
+          <label for="nickname" class="form-label">ニックネーム (表示名)</label>
+          <input type="text" class="form-control" id="nickname" name="nickname" required>
+        </div>
+        <div class="mb-3">
+          <label for="password" class="form-label">パスワード</label>
+          <input type="password" class="form-control" id="password" name="password" required>
+        </div>
+        <div class="mb-3 form-check">
+          <input type="checkbox" class="form-check-input" id="is_admin" name="is_admin">
+          <label class="form-check-label" for="is_admin">管理者権限を付与する</label>
+        </div>
+        <button type="submit" class="btn btn-success">ユーザーを作成</button>
+      </form>
+    </div>
+  </div>
+
+  <h3 class="mt-5">👥 登録ユーザー一覧</h3>
+    <ul class="list-group mb-5">
+    {% for user in all_users %}
+        <li class="list-group-item d-flex justify-content-between align-items-center">
+        
+        <div>
+            <strong>{{ user.nickname }}</strong> (ログインID: {{ user.username }})
+            {% if user.is_admin %}
+            <span class="badge bg-danger">管理者</span>
+            {% else %}
+            <span class="badge bg-secondary">一般</span>
+            {% endif %}
+        </div>
+        
+        <div class="d-flex align-items-center">
+            <span class="badge bg-info me-3">週間解答: {{ user.weekly_attempts }} 問</span>
+        {# 自分自身ではないユーザーにのみ削除ボタンを表示 #}
+            {% if user.id != current_user.id %}
+            <form action="{{ url_for('delete_user', user_id=user.id) }}" method="post" onsubmit="return confirm('このユーザーを全ての関連データと共に完全に削除します。本当によろしいですか？');" style="display: inline;">
+                <button type="submit" class="btn btn-danger btn-sm">削除</button>
+            </form>
+            {% endif %}
+        </div>
+        
+        </li>
+    {% endfor %}
+    </ul>
+
+  <h3 class="mt-5">週間学習ランキング</h3>
+  <ul class="list-group mb-5">
+    {% for user_stat in user_stats %}
+    <li class="list-group-item d-flex justify-content-between align-items-center">
+        {# statオブジェクトのUserプロパティから情報を取得 #}
+        {{ user_stat.User.nickname }} ({{ user_stat.User.username }})
+        <span class="badge bg-primary rounded-pill">{{ user_stat.weekly_attempts }} 問</span>
+    </li>
+    {% endfor %}
+  </ul>
+
+  <h3 class="mt-5 d-flex justify-content-between align-items-center">
+    <span>📨 お問い合わせ一覧</span>
+    <a href="{{ url_for('deleted_messages_page') }}" class="btn btn-secondary btn-sm">
+        削除済みリストを見る
+    </a>
+  </h3>
+  {% if contact_msgs and contact_msgs|length > 0 %}
+    <ul class="list-group">
+      {% for msg in contact_msgs %}
+        <li class="list-group-item">
+          <div class="d-flex justify-content-between">
+            <strong>{{ msg.user.nickname }} ({{ msg.user.username }})</strong>
+            <small class="text-muted">{{ msg.timestamp.strftime('%Y-%m-%d %H:%M') }}</small>
+          </div>
+          <div class="mt-2">
+            <strong>件名:</strong> {{ msg.subject }}<br>
+            <strong>内容:</strong>
+            <p>{{ msg.body.replace('\n','<br>')|safe }}</p>
+          </div>
+          <div class="text-end mt-2">
+            <form action="{{ url_for('delete_message', msg_id=msg.id) }}" method="post" onsubmit="return confirm('本当にこのメッセージを削除しますか？');">
+              <button type="submit" class="btn btn-danger btn-sm">削除</button>
+            </form>
+          </div>
+        </li>
+      {% endfor %}
+    </ul>
+  {% else %}
+    <p class="text-muted">お問い合わせはまだありません。</p>
+  {% endif %}
+
+</div>
+{% endblock %}

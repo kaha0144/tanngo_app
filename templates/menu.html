@@ -5,22 +5,26 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>メニュー</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css">
     <style>
         body { background-color: #f8f9fa; }
-        .container { max-width: 800px; }
-        .card { margin-bottom: 1.5rem; }
-        .btn-full { width: 100%; margin-bottom: 0.5rem; }
+        .container { max-width: 960px; }
+        .card { transition: transform 0.2s ease-in-out; }
+        .card:hover { transform: translateY(-5px); }
         .resume-text { font-size: 0.9rem; color: #6c757d; }
     </style>
 </head>
 <body>
     <div class="container my-5">
-        <div class="d-flex flex-column flex-md-row justify-content-md-between align-items-md-center mb-4">
+        <div class="d-flex flex-column flex-md-row justify-content-md-between align-items-md-center mb-5">
             <h1 class="h2 mb-3 mb-md-0">単語学習メニュー</h1>
             <div class="text-center text-md-end">
                 <p class="me-md-3 mb-2 mb-md-0 d-block d-md-inline">ようこそ, {{ current_user.nickname }} さん</p>
                 <div class="btn-group" role="group">
                     <a href="{{ url_for('mypage') }}" class="btn btn-sm btn-outline-primary">マイページ</a>
+                    <a href="{{ url_for('contact') }}" class="btn btn-sm btn-outline-primary">
+                        お問い合わせ
+                    </a>
                     {% if current_user.is_admin %}
                         <a href="{{ url_for('admin_page') }}" class="btn btn-sm btn-danger">管理者ページ</a>
                     {% endif %}
@@ -28,24 +32,18 @@
                 </div>
             </div>
         </div>
+
         {% with messages = get_flashed_messages(with_categories=true) %}
             {% if messages %}
                 {% for category, message in messages %}
-                    <div class="alert alert-info">{{ message }}</div>
+                    <div class="alert alert-info" role="alert">{{ message }}</div>
                 {% endfor %}
             {% endif %}
         {% endwith %}
-        {% with messages = get_flashed_messages(with_categories=true) %}
-            {% if messages %}
-                {% for category, message in messages %}
-                    <div class="alert alert-info">{{ message }}</div>
-                {% endfor %}
-            {% endif %}
-        {% endwith %}
-        
-        <div class="card">
-            <div class="card-body">
-                <h5 class="card-title">出題形式を選択</h5>
+
+        <div class="card mb-5 shadow-sm">
+            <div class="card-body text-center">
+                <h5 class="card-title mb-3">1. まずは出題形式を選択</h5>
                 <div class="btn-group w-100" role="group">
                     {% set current_direction = session.get('quiz_direction', 'ej') %}
                     <a href="{{ url_for('set_direction', direction='ej') }}" class="btn {% if current_direction == 'ej' %}btn-primary{% else %}btn-outline-primary{% endif %}">
@@ -54,106 +52,129 @@
                     <a href="{{ url_for('set_direction', direction='je') }}" class="btn {% if current_direction == 'je' %}btn-primary{% else %}btn-outline-primary{% endif %}">
                         日本語 → 英語
                     </a>
-                    <a href="{{ url_for('rough_menu') }}" class="card card-rough-review">
-                        ざっくり学ぶ
-                    </a>
                 </div>
             </div>
         </div>
 
-        <div class="row">
-            <div class="col-lg-4">
-                <!-- (ランダムで学ぶカード) -->
-            </div>
-            <!-- ... 他のカード ... -->
-        </div>
-        <div class="row">
-            <div class="col-lg-4">
-                <div class="card h-100">
+        <h2 class="h4 mb-3">2. 学習モードを選ぶ</h2>
+        <div class="row row-cols-1 row-cols-md-2 row-cols-lg-4 g-4 mb-5">
+            <div class="col">
+                <div class="card h-100 shadow-sm">
                     <div class="card-body d-flex flex-column">
-                        <h5 class="card-title">🚀 ランダムで学ぶ</h5>
-                        <p class="card-text">全ての単語からランダムに出題されます。</p>
-                        <div class="mt-auto">
+                        <h5 class="card-title"><i class="bi bi-shuffle text-primary"></i> ランダムで学ぶ</h5>
+                        <p class="card-text small">全単語からランダムに出題</p>
+                        <div class="mt-auto pt-2">
                             {% if saved_random_state %}
-                                <p class="resume-text">💡 中断したデータがあります</p>
-                                <a href="{{ url_for('resume_random_quiz') }}" class="btn btn-success btn-full">途中から学ぶ</a>
-                                <a href="{{ url_for('start_new_random_quiz') }}" class="btn btn-primary btn-full">新しく学ぶ</a>
+                                <p class="resume-text">💡 中断データあり</p>
+                                <a href="{{ url_for('resume_random_quiz') }}" class="btn btn-success w-100 mb-2">途中から</a>
+                                <a href="{{ url_for('start_new_random_quiz') }}" class="btn btn-primary w-100">新しく</a>
                             {% else %}
-                                <a href="{{ url_for('start_new_random_quiz') }}" class="btn btn-primary btn-full">クイズ開始</a>
+                                <a href="{{ url_for('start_new_random_quiz') }}" class="btn btn-primary w-100">スタート</a>
                             {% endif %}
                         </div>
                     </div>
                 </div>
             </div>
-            <div class="col-lg-4">
-                <div class="card h-100">
+            
+            <div class="col">
+                <div class="card h-100 shadow-sm">
                     <div class="card-body d-flex flex-column">
-                        <h5 class="card-title">📚 細かく学ぶ</h5>
-                        <p class="card-text">範囲を選んで集中的に学習します。</p>
-                        <div class="mt-auto">
-                            <a href="{{ url_for('learn_details') }}" class="btn btn-primary btn-full">範囲を選択する</a>
-                        </div>
-                    </div>
-                </div>
-            </div>
-            <div class="col-lg-4">
-                <div class="card h-100">
-                    <div class="card-body d-flex flex-column">
-                        <h5 class="card-title">💪 間違えた問題を復習</h5>
-                        <p class="card-text">間違えた問題に再挑戦して記憶を定着。</p>
-                        <div class="mt-auto">
-                            {% if saved_review_state %}
-                                <p class="resume-text">💡 中断したデータがあります</p>
-                                <a href="{{ url_for('retry_mistakes') }}" class="btn btn-success btn-full">途中から復習</a>
-                            {% endif %}
-                            <a href="{{ url_for('retry_mistakes') }}" class="btn btn-warning btn-full">
-                                {% if saved_review_state %}新しく復習を始める{% else %}復習を開始{% endif %}
+                        <h5 class="card-title"><i class="bi bi-lightning-charge text-success"></i> ざっくり学ぶ</h5>
+                        <p class="card-text small">気軽に全体を把握します。</p>
+                        <div class="mt-auto pt-2">
+                            <a href="{{ url_for('rough_range_selector', direction=session.get('quiz_direction', 'ej')) }}" class="btn btn-info w-100 mb-2">
+                                <i class="bi bi-collection"></i> 細かく学ぶ
                             </a>
-                            <a href="{{ url_for('manage_mistakes') }}" class="btn btn-outline-secondary btn-full mt-2">
-                                間違いリストを管理
+                            <a href="{{url_for('start_rough_review')}}" class="btn btn-warning w-100">
+                                <i class="bi bi-arrow-counterclockwise"></i> 間違いを復習
                             </a>
                         </div>
                     </div>
                 </div>
             </div>
-        </div>
-        <div class="card mb-4">
-            <div class="card-body">
-                <h5 class="card-title">🏆 週間学習ランキング Top 3</h5>
-                {% if top_users %}
-                    <ul class="list-group list-group-flush">
-                        {% for user, attempts in top_users %}
-                        <li class="list-group-item d-flex justify-content-between align-items-center">
-                            <span>
-                                {% if loop.index == 1 %}🥇{% elif loop.index == 2 %}🥈{% elif loop.index == 3 %}🥉{% else %}{{ loop.index }}.{% endif %}
-                                {{ user.nickname }} さん
-                            </span>
-                            <span class="badge bg-primary rounded-pill">{{ attempts }} 問</span>
-                        </li>
-                        {% endfor %}
-                    </ul>
-                {% else %}
-                    <p class="text-muted">まだランキングデータがありません。</p>
-                {% endif %}
-            </div>
-        </div>
-        <!-- ★★★ ここまで ★★★ -->
-        <!-- menu.html の <div class="row"> の中に追加 -->
 
-        <div class="card mb-4">
-            <div class="card h-100">
-                <div class="card-body d-flex flex-column">
-                    <h5 class="card-title">⚙️ ツール・分析</h5>
-                    <p class="card-text">便利な機能で学習をサポートします。</p>
-                    <div class="mt-auto">
-                        <a href="{{ url_for('search_word') }}" class="btn btn-info btn-full">単語を検索する</a>
-                        <a href="{{ url_for('progress') }}" class="btn btn-info btn-full">進捗グラフを見る</a>
+            
+            <div class="col">
+                <div class="card h-100 shadow-sm">
+                    <div class="card-body d-flex flex-column">
+                        <h5 class="card-title"><i class="bi bi-arrow-counterclockwise text-warning"></i> 総合復習</h5>
+                        <p class="card-text small">全ての間違いに再挑戦します。</p>
+                        <div class="mt-auto pt-2">
+                            {% if saved_review_state %}
+                                <p class="resume-text text-center mb-2">💡 中断したデータがあります</p>
+                                <!-- 「途中から」ボタン: 保存された状態から再開します -->
+                                <a href="{{ url_for('retry_mistakes') }}" class="btn btn-success w-100 mb-2">途中から復習</a>
+                                <!-- 「新しく」ボタン: 保存された状態を破棄して最初から始めます -->
+                                <a href="{{ url_for('retry_mistakes', new=True) }}" class="btn btn-warning w-100">新しく復習</a>
+                            {% else %}
+                                <!-- 保存された状態がない場合 -->
+                                <a href="{{ url_for('retry_mistakes') }}" class="btn btn-warning w-100">復習開始</a>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="col">
+                <div class="card h-100 shadow-sm">
+                    <div class="card-body d-flex flex-column">
+                        <h5 class="card-title"><i class="bi bi-collection text-info"></i> 総合学習</h5>
+                        <p class="card-text small">全範囲から集中的に学習</p>
+                        <div class="mt-auto pt-2">
+                            <a href="{{ url_for('learn_details') }}" class="btn btn-primary w-100">範囲を選択</a>
+                        </div>
                     </div>
                 </div>
             </div>
         </div>
-        <div class="text-center mt-4">
-            <a href="{{ url_for('start_fresh_quiz_from_anywhere') }}" class="btn btn-danger" onclick="return confirm('本当に全ての進行状況と間違いリストをリセットしますか？');">全てのデータをリセット</a>
+
+        <h2 class="h4 mb-3">3. 学習の記録とツール</h2>
+        <div class="row row-cols-1 row-cols-lg-2 g-4 mb-5">
+            <div class="col">
+                <div class="card h-100 shadow-sm">
+                    <div class="card-body">
+                        <h5 class="card-title"><i class="bi bi-trophy"></i> 週間学習ランキング Top 3</h5>
+                        {% if top_users %}
+                            <ul class="list-group list-group-flush">
+                                {% for user, attempts in top_users %}
+                                <li class="list-group-item d-flex justify-content-between align-items-center">
+                                    <span>
+                                        {% if loop.index == 1 %}🥇{% elif loop.index == 2 %}🥈{% elif loop.index == 3 %}🥉{% else %}{{ loop.index }}.{% endif %}
+                                        {{ user.nickname }} さん
+                                    </span>
+                                    <span class="badge bg-primary rounded-pill">{{ attempts }} 問</span>
+                                </li>
+                                {% endfor %}
+                            </ul>
+                        {% else %}
+                            <p class="text-muted">まだランキングデータがありません。</p>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+            <div class="col">
+                <div class="card h-100 shadow-sm">
+                    <div class="card-body d-flex flex-column">
+                        <h5 class="card-title"><i class="bi bi-tools"></i> ツールと分析</h5>
+                        <div class="mt-auto pt-2">
+                            <a href="{{ url_for('search_word') }}" class="btn btn-outline-info w-100 mb-2">単語を検索する</a>
+                            <a href="{{ url_for('progress') }}" class="btn btn-outline-info w-100 mb-2">進捗グラフを見る</a>
+                             <a href="{{ url_for('all_manage_mistakes') }}" class="btn btn-outline-secondary w-100">全ての間違いを管理</a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card border-danger mt-5 shadow-sm">
+            <div class="card-header bg-danger text-white">
+                <i class="bi bi-exclamation-triangle-fill"></i> 全データのリセット
+            </div>
+            <div class="card-body text-center">
+                <p class="card-text text-danger mb-3">注意: 全ての進行状況と間違いリストが完全に削除されます。この操作は元に戻せません。</p>
+                <a href="{{ url_for('start_fresh_quiz_from_anywhere') }}" class="btn btn-danger" onclick="return confirm('本当によろしいですか？全ての学習データが完全にリセットされます。');">
+                    全てのデータをリセットする
+                </a>
+            </div>
         </div>
     </div>
 
